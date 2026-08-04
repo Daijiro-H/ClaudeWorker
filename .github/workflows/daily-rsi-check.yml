@@ -1,0 +1,27 @@
+name: Daily S&P500 RSI Check
+
+on:
+  schedule:
+    # 22:30 UTC, Mon-Fri (after the US market close)
+    - cron: "30 22 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  check-rsi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run RSI check
+        env:
+          LINE_NOTIFY_TOKEN: ${{ secrets.LINE_NOTIFY_TOKEN }}
+        run: python scripts/check_sp500_rsi.py
