@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the S&P 500 RSI(14) and send a LINE Notify alert.
+"""Check the S&P 500 RSI(14) and send a LINE alert via the Messaging API.
 
 Sends a daily notification with the current RSI value, and flags an
 actionable signal when RSI reaches the overbought (>=70) or oversold
@@ -19,7 +19,7 @@ TICKER = "^GSPC"
 RSI_PERIOD = 14
 OVERBOUGHT = 70
 OVERSOLD = 30
-LINE_NOTIFY_URL = "https://notify-api.line.me/api/notify"
+LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
 
 def fetch_close_prices(ticker: str, period: str = "6mo") -> pd.Series:
@@ -66,20 +66,28 @@ def build_message(date: pd.Timestamp, price: float, rsi: float) -> str:
     return "\n".join(lines)
 
 
-def send_line_notify(message: str, token: str) -> None:
+def send_line_push_message(message: str, channel_access_token: str, to: str) -> None:
     response = requests.post(
-        LINE_NOTIFY_URL,
-        headers={"Authorization": f"Bearer {token}"},
-        data={"message": message},
+        LINE_PUSH_URL,
+        headers={
+            "Authorization": f"Bearer {channel_access_token}",
+            "Content-Type": "application/json",
+        },
+        json={"to": to, "messages": [{"type": "text", "text": message}]},
         timeout=30,
     )
     response.raise_for_status()
 
 
 def main() -> int:
-    token = os.environ.get("LINE_NOTIFY_TOKEN")
-    if not token:
-        print("Error: LINE_NOTIFY_TOKEN environment variable is not set.", file=sys.stderr)
+    channel_access_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+    user_id = os.environ.get("LINE_USER_ID")
+    if not channel_access_token or not user_id:
+        print(
+            "Error: LINE_CHANNEL_ACCESS_TOKEN and LINE_USER_ID environment "
+            "variables must both be set.",
+            file=sys.stderr,
+        )
         return 1
 
     close = fetch_close_prices(TICKER)
@@ -96,7 +104,7 @@ def main() -> int:
     message = build_message(latest_date, latest_price, latest_rsi)
     print(message)
 
-    send_line_notify(message, token)
+    send_line_push_message(message, channel_access_token, user_id)
     return 0
 
 
