@@ -148,10 +148,17 @@ def find_tracking_issue(token: str, repository: str) -> int | None:
     return None
 
 
-def create_tracking_issue(title: str, token: str, repository: str, assignee: str) -> int:
+def create_tracking_issue(
+    title: str, message: str, token: str, repository: str, assignee: str
+) -> int:
+    # The first run's result goes straight into the body rather than into a
+    # follow-up comment: each notifying action costs the recipient a separate
+    # email, so the creation run posts once instead of twice.
     body = (
         f"{TRACKING_MARKER}\n"
         f"@{assignee}\n\n"
+        f"```\n{message}\n```\n\n"
+        f"---\n\n"
         f"PLTRの株価を毎日チェックし、結果をこのIssueにコメントします。\n"
         f"タイトルは常に最新の判定に更新されるため、通知メールの件名だけで結果が分かります。\n\n"
         f"このIssueは閉じないでください。閉じると次回の実行で新しいIssueが作成されます。"
@@ -226,14 +233,15 @@ def notify_github(message: str, title: str, threshold: float) -> None:
 
     number = find_tracking_issue(token, repository)
     if number is None:
-        number = create_tracking_issue(title, token, repository, assignee)
-        print(f"Tracking issue #{number} created.")
-    else:
-        # Retitle first: a comment notification carries the issue's title as
-        # it stands when the comment is posted, so this puts today's verdict
-        # in the subject line.
-        set_issue_title(number, title, token, repository)
+        number = create_tracking_issue(title, message, token, repository, assignee)
+        print(f"Tracking issue #{number} created with today's result in the body.")
+        return
 
+    # Retitle first: a comment notification carries the issue's title as it
+    # stands when the comment is posted, so this puts today's verdict in the
+    # subject line. Editing a title notifies nobody, so the comment below
+    # stays the run's only notification.
+    set_issue_title(number, title, token, repository)
     url = add_issue_comment(
         number,
         f"@{assignee}\n\n```\n{message}\n```",
