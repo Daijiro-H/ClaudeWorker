@@ -103,7 +103,9 @@ def send_line_push_message(message: str, channel_access_token: str, to: str) -> 
     response.raise_for_status()
 
 
-def create_github_issue(title: str, body: str, token: str, repository: str) -> str:
+def create_github_issue(
+    title: str, body: str, token: str, repository: str, assignee: str
+) -> str:
     response = requests.post(
         f"{GITHUB_API_URL}/repos/{repository}/issues",
         headers={
@@ -111,7 +113,7 @@ def create_github_issue(title: str, body: str, token: str, repository: str) -> s
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         },
-        json={"title": title, "body": body},
+        json={"title": title, "body": body, "assignees": [assignee]},
         timeout=30,
     )
     response.raise_for_status()
@@ -150,13 +152,24 @@ def notify_github_issue(message: str, date_str: str, threshold: float) -> None:
             file=sys.stderr,
         )
         return
+    # Assign and @mention the recipient. A repository's default watch setting
+    # is "Participating and @mentions", under which a bot-opened issue that
+    # does not involve you generates no notification at all; being assigned or
+    # mentioned counts as participating, so the alert reaches the inbox
+    # without the recipient having to switch the repo to "All Activity".
+    assignee = os.environ.get("ISSUE_ASSIGNEE", "").strip() or repository.split("/")[0]
     url = create_github_issue(
         title=f"[PLTR] ${threshold:,.0f} に到達しました ({date_str})",
-        body=f"```\n{message}\n```\n\nこのIssueは日次チェックワークフローが自動で作成しました。",
+        body=(
+            f"@{assignee}\n\n"
+            f"```\n{message}\n```\n\n"
+            "このIssueは日次チェックワークフローが自動で作成しました。"
+        ),
         token=token,
         repository=repository,
+        assignee=assignee,
     )
-    print(f"GitHub issue created: {url}")
+    print(f"GitHub issue created (assigned to {assignee}): {url}")
 
 
 def main() -> int:
