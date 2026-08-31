@@ -8,12 +8,14 @@ RSIが70以上(買われすぎ)または30以下(売られすぎ)になった場
 ## 仕組み
 
 - `scripts/check_sp500_rsi.py` が yfinance で S&P500 の直近の終値を取得し、Wilder方式のRSI(14)を計算します。
-- 計算結果を LINE Messaging API の push message でメッセージとして送信します(毎日1回、平日)。
+- 結果は毎回通知されます(RSIが70/30に到達したかどうかにかかわらず)。通知の仕組みは
+  PLTRツールと共通で、`scripts/notify.py` に実装されています。詳細は後述の
+  「PLTR $160 Notifier」の[通知経路](#通知経路)を参照してください。
 - GitHub Actions のスケジュール実行 (`.github/workflows/daily-rsi-check.yml`) により、平日22:30 UTC(米国市場のクローズ後)に自動実行されます。
 
 ## セットアップ
 
-### 1. LINE公式アカウント(Messaging APIチャネル)の作成
+### 1. LINE公式アカウント(Messaging APIチャネル)の作成(任意)
 
 1. [LINE Developers Console](https://developers.line.biz/console/) にログイン(お持ちのLINEアカウントでOK)
 2. プロバイダーを作成(未作成の場合)し、「新規チャネル作成」から **Messaging API** チャネルを作成
@@ -21,9 +23,11 @@ RSIが70以上(買われすぎ)または30以下(売られすぎ)になった場
 4. 同じくチャネルの `Messaging API設定` タブに表示されるQRコードから、通知を受け取りたいLINEアカウントでBotを友だち追加
 5. `チャネル基本設定` タブ下部の「あなたのユーザーID」を確認(自分宛てにpushする場合のユーザーIDとして使用可能)
 
-### 2. GitHub Secrets への登録
+### 2. GitHub Secrets への登録(任意)
 
-リポジトリの `Settings > Secrets and variables > Actions` で以下のSecretを登録してください。
+**LINE通知が不要なら、この手順は不要です。** GitHub Issueによる通知はSecretsなしで動作します。
+LINEでも受け取りたい場合のみ、リポジトリの `Settings > Secrets and variables > Actions`
+で以下のSecretを登録してください。
 
 | Secret名 | 内容 |
 | --- | --- |
@@ -75,10 +79,13 @@ PLTRは$160より上で推移しているため、「下落して$160に到達�
 
 このツールは通知経路を2つ持ちます。**設定なしで動くのはGitHubの方です。**
 
+この通知処理は `scripts/notify.py` に共通化されており、**S&P500 RSIツールと同じ仕組み**です。
+2つのツールはそれぞれ別の追跡用Issueを持ち、互いに干渉しません。
+
 | 経路 | 送信タイミング | 必要な設定 |
 | --- | --- | --- |
-| **GitHub Issue コメント** | **毎日(到達・未到達どちらも)** | **不要**(`GITHUB_TOKEN` を自動使用) |
-| LINE Messaging API | 毎日(到達・未到達どちらも) | `LINE_CHANNEL_ACCESS_TOKEN` / `LINE_USER_ID` |
+| **GitHub Issue コメント** | **毎回(判定にかかわらず)** | **不要**(`GITHUB_TOKEN` を自動使用) |
+| LINE Messaging API | 毎回(判定にかかわらず) | `LINE_CHANNEL_ACCESS_TOKEN` / `LINE_USER_ID` |
 
 ### GitHub通知の仕組み
 
@@ -116,7 +123,8 @@ GitHubは通知イベントごとに個別のメールを送るため、1回の�
 作り直さない限り再発しません。初回実行では結果をコメントではなく**Issue本文に直接**
 書き込むことで、作成とコメントの二重通知を避けています。
 
-追跡用Issueは `<!-- pltr-threshold-monitor -->` というマーカーで識別しています。
+追跡用Issueはマーカーで識別しています(PLTR: `<!-- pltr-threshold-monitor -->`、
+S&P500: `<!-- sp500-rsi-monitor -->`)。
 **このIssueは閉じないでください。** 閉じると次回の実行時に新しいIssueが作成されます
 (意図的に作り直したい場合は閉じてください)。
 
@@ -128,7 +136,7 @@ GitHubへの通知はそのまま機能します。
 
 ## セットアップ
 
-### 1. LINE公式アカウント(Messaging APIチャネル)の作成
+### 1. LINE公式アカウント(Messaging APIチャネル)の作成(任意)
 
 1. [LINE Developers Console](https://developers.line.biz/console/) にログイン(お持ちのLINEアカウントでOK)
 2. プロバイダーを作成(未作成の場合)し、「新規チャネル作成」から **Messaging API** チャネルを作成
@@ -136,9 +144,11 @@ GitHubへの通知はそのまま機能します。
 4. 同じくチャネルの `Messaging API設定` タブに表示されるQRコードから、通知を受け取りたいLINEアカウントでBotを友だち追加
 5. `チャネル基本設定` タブ下部の「あなたのユーザーID」を確認(自分宛てにpushする場合のユーザーIDとして使用可能)
 
-### 2. GitHub Secrets への登録
+### 2. GitHub Secrets への登録(任意)
 
-リポジトリの `Settings > Secrets and variables > Actions` で以下のSecretを登録してください。
+**LINE通知が不要なら、この手順は不要です。** GitHub Issueによる通知はSecretsなしで動作します。
+LINEでも受け取りたい場合のみ、リポジトリの `Settings > Secrets and variables > Actions`
+で以下のSecretを登録してください。
 
 | Secret名 | 内容 |
 | --- | --- |

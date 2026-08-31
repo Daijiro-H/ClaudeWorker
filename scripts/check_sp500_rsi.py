@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
-"""Check the S&P 500 RSI(14) and send a LINE alert via the Messaging API.
+"""Check the S&P 500 RSI(14) and notify.
 
-Sends a daily notification with the current RSI value, and flags an
-actionable signal when RSI reaches the overbought (>=70) or oversold
-(<=30) threshold.
+Reports the current RSI every run, and flags an actionable signal when RSI
+reaches the overbought (>=70) or oversold (<=30) threshold. See notify.py for
+how the result is delivered.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 
 import pandas as pd
-import requests
 import yfinance as yf
+
+import notify
 
 TICKER = "^GSPC"
 RSI_PERIOD = 14
 OVERBOUGHT = 70
 OVERSOLD = 30
-LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
+TRACKING_MARKER = "<!-- sp500-rsi-monitor -->"
+DESCRIPTION = "S&P500のRSI(14)を毎営業日チェックし、結果をこのIssueにコメントします。"
 
 
 def fetch_close_prices(ticker: str, period: str = "6mo") -> pd.Series:
@@ -47,6 +48,17 @@ def calculate_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
     return rsi
 
 
+def build_title(price: float, rsi: float) -> str:
+    """A self-contained one-liner; it becomes the notification subject."""
+    if rsi >= OVERBOUGHT:
+        verdict = "買われすぎ -> 売り検討"
+    elif rsi <= OVERSOLD:
+        verdict = "売られすぎ -> 買い検討"
+    else:
+        verdict = "中立"
+    return f"[S&P500] {price:,.2f} / RSI {rsi:.1f} — {verdict}"
+
+
 def build_message(date: pd.Timestamp, price: float, rsi: float) -> str:
     date_str = date.strftime("%Y-%m-%d")
     lines = [
@@ -66,30 +78,7 @@ def build_message(date: pd.Timestamp, price: float, rsi: float) -> str:
     return "\n".join(lines)
 
 
-def send_line_push_message(message: str, channel_access_token: str, to: str) -> None:
-    response = requests.post(
-        LINE_PUSH_URL,
-        headers={
-            "Authorization": f"Bearer {channel_access_token}",
-            "Content-Type": "application/json",
-        },
-        json={"to": to, "messages": [{"type": "text", "text": message}]},
-        timeout=30,
-    )
-    response.raise_for_status()
-
-
 def main() -> int:
-    channel_access_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-    user_id = os.environ.get("LINE_USER_ID")
-    if not channel_access_token or not user_id:
-        print(
-            "Error: LINE_CHANNEL_ACCESS_TOKEN and LINE_USER_ID environment "
-            "variables must both be set.",
-            file=sys.stderr,
-        )
-        return 1
-
     close = fetch_close_prices(TICKER)
     rsi = calculate_rsi(close)
 
@@ -101,10 +90,13 @@ def main() -> int:
         print("Error: not enough data to calculate RSI yet.", file=sys.stderr)
         return 1
 
-    message = build_message(latest_date, latest_price, latest_rsi)
-    print(message)
-
-    send_line_push_message(message, channel_access_token, user_id)
+    notify.notify(
+        marker=TRACKING_MARKER,
+        heading="S&P500 RSIチェック",
+        title=build_title(latest_price, latest_rsi),
+        message=build_message(latest_date, latest_price, latest_rsi),
+        description=DESCRIPTION,
+    )
     return 0
 
 

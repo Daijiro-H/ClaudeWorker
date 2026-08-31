@@ -6,6 +6,11 @@ on:
     - cron: "30 22 * * 1-5"
   workflow_dispatch: {}
 
+permissions:
+  # Needed so the run can create and update the tracking issue.
+  issues: write
+  contents: read
+
 jobs:
   check-rsi:
     runs-on: ubuntu-latest
@@ -23,6 +28,8 @@ jobs:
 
       - name: Run RSI check
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_ASSIGNEE: ${{ github.repository_owner }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python scripts/check_sp500_rsi.py
