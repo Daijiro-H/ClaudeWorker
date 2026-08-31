@@ -26,7 +26,7 @@ import requests
 import yfinance as yf
 
 TICKER = "PLTR"
-THRESHOLD = 160.0
+DEFAULT_THRESHOLD = 160.0
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 GITHUB_API_URL = "https://api.github.com"
 
@@ -42,7 +42,19 @@ def fetch_recent_prices(ticker: str, period: str = "1mo") -> pd.DataFrame:
     return data.dropna(subset=["Close"])
 
 
-def evaluate(close: float, low: float, threshold: float = THRESHOLD) -> bool:
+def resolve_threshold() -> float:
+    """The $160 target, overridable via PLTR_THRESHOLD.
+
+    The workflow exposes this as a dispatch input so a manual run can force
+    the reached branch and verify that the alert actually gets delivered.
+    """
+    raw = os.environ.get("PLTR_THRESHOLD", "").strip()
+    if not raw:
+        return DEFAULT_THRESHOLD
+    return float(raw)
+
+
+def evaluate(close: float, low: float, threshold: float = DEFAULT_THRESHOLD) -> bool:
     """Return True when the price has come down to the threshold.
 
     PLTR trades above $160, so the meaningful event is the price falling to
@@ -52,20 +64,27 @@ def evaluate(close: float, low: float, threshold: float = THRESHOLD) -> bool:
     return close <= threshold or low <= threshold
 
 
-def build_message(date: pd.Timestamp, close: float, low: float, high: float, reached: bool) -> str:
+def build_message(
+    date: pd.Timestamp,
+    close: float,
+    low: float,
+    high: float,
+    reached: bool,
+    threshold: float = DEFAULT_THRESHOLD,
+) -> str:
     date_str = date.strftime("%Y-%m-%d")
     lines = [
-        "PLTR $160 チェック",
+        f"PLTR ${threshold:,.0f} チェック",
         f"日付: {date_str}",
         f"終値: {close:,.2f}",
         f"高値: {high:,.2f} / 安値: {low:,.2f}",
     ]
 
     if reached:
-        lines.append(f"判定: 到達(${THRESHOLD:,.0f}以下) -> アクション検討")
+        lines.append(f"判定: 到達(${threshold:,.0f}以下) -> アクション検討")
     else:
-        diff = close - THRESHOLD
-        pct = diff / THRESHOLD * 100
+        diff = close - threshold
+        pct = diff / threshold * 100
         lines.append(f"判定: 未到達 (あと ${diff:,.2f} / {pct:.1f}%)")
 
     return "\n".join(lines)
@@ -121,7 +140,7 @@ def notify_line(message: str) -> None:
     print("LINE push sent.")
 
 
-def notify_github_issue(message: str, date_str: str) -> None:
+def notify_github_issue(message: str, date_str: str, threshold: float) -> None:
     token = os.environ.get("GITHUB_TOKEN")
     repository = os.environ.get("GITHUB_REPOSITORY")
     if not token or not repository:
@@ -132,7 +151,7 @@ def notify_github_issue(message: str, date_str: str) -> None:
         )
         return
     url = create_github_issue(
-        title=f"[PLTR] ${THRESHOLD:,.0f} に到達しました ({date_str})",
+        title=f"[PLTR] ${threshold:,.0f} に到達しました ({date_str})",
         body=f"```\n{message}\n```\n\nこのIssueは日次チェックワークフローが自動で作成しました。",
         token=token,
         repository=repository,
@@ -141,6 +160,7 @@ def notify_github_issue(message: str, date_str: str) -> None:
 
 
 def main() -> int:
+    threshold = resolve_threshold()
     data = fetch_recent_prices(TICKER)
 
     latest = data.iloc[-1]
@@ -149,14 +169,14 @@ def main() -> int:
     low = float(latest["Low"])
     high = float(latest["High"])
 
-    reached = evaluate(close, low)
-    message = build_message(latest_date, close, low, high, reached)
+    reached = evaluate(close, low, threshold)
+    message = build_message(latest_date, close, low, high, reached, threshold)
     print(message)
 
     write_job_summary(message)
     notify_line(message)
     if reached:
-        notify_github_issue(message, latest_date.strftime("%Y-%m-%d"))
+        notify_github_issue(message, latest_date.strftime("%Y-%m-%d"), threshold)
 
     return 0
 

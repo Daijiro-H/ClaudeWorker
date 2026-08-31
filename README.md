@@ -128,6 +128,8 @@ PLTR $160 チェック
 
 ## カスタマイズ
 
-- しきい値は `scripts/check_pltr_price.py` 冒頭の `THRESHOLD` で変更できます。
+- しきい値は `scripts/check_pltr_price.py` 冒頭の `DEFAULT_THRESHOLD` で変更できます。
+- 一時的な上書きは、`Run workflow` の `threshold` 入力(環境変数 `PLTR_THRESHOLD`)で行えます。
+  高い値(例: `999`)を指定すると必ず「到達」と判定されるため、**通知が実際に届くかのテスト**に使えます。
 - 銘柄は同じく `TICKER` で変更できます。
 - 実行時刻は `.github/workflows/daily-pltr-check.yml` の `cron` を変更してください(UTC指定です。JSTから9時間引いた値になります)。
