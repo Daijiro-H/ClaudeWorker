@@ -80,6 +80,11 @@ def build_message(date: pd.Timestamp, price: float, rsi: float) -> str:
     else:
         lines.append("シグナル: 中立")
 
+    lines.append(
+        f"判定基準: RSI >= {OVERBOUGHT} 買われすぎ / "
+        f"RSI <= {CAUTION_LOW} 要注意 / RSI <= {OVERSOLD} 売られすぎ"
+    )
+
     return "\n".join(lines)
 
 
