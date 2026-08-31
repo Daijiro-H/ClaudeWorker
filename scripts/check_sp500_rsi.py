@@ -2,8 +2,8 @@
 """Check the S&P 500 RSI(14) and notify.
 
 Reports the current RSI every run, and flags an actionable signal when RSI
-reaches the overbought (>=70) or oversold (<=30) threshold. See notify.py for
-how the result is delivered.
+reaches the overbought (>=70) or oversold (<=30) threshold, or a caution
+signal when RSI drops to <=40. See notify.py for how the result is delivered.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ TICKER = "^GSPC"
 RSI_PERIOD = 14
 OVERBOUGHT = 70
 OVERSOLD = 30
+CAUTION_LOW = 40
 TRACKING_MARKER = "<!-- sp500-rsi-monitor -->"
 DESCRIPTION = "S&P500のRSI(14)を毎営業日チェックし、結果をこのIssueにコメントします。"
 
@@ -54,6 +55,8 @@ def build_title(price: float, rsi: float) -> str:
         verdict = "買われすぎ -> 売り検討"
     elif rsi <= OVERSOLD:
         verdict = "売られすぎ -> 買い検討"
+    elif rsi <= CAUTION_LOW:
+        verdict = "要注意(売られすぎゾーンに接近)"
     else:
         verdict = "中立"
     return f"[S&P500] {price:,.2f} / RSI {rsi:.1f} — {verdict}"
@@ -72,8 +75,10 @@ def build_message(date: pd.Timestamp, price: float, rsi: float) -> str:
         lines.append(f"シグナル: 買われすぎ(RSI >= {OVERBOUGHT}) -> 売りアクション検討")
     elif rsi <= OVERSOLD:
         lines.append(f"シグナル: 売られすぎ(RSI <= {OVERSOLD}) -> 買いアクション検討")
+    elif rsi <= CAUTION_LOW:
+        lines.append(f"シグナル: 要注意(RSI <= {CAUTION_LOW}) -> 売られすぎゾーンに接近")
     else:
-        lines.append("シグナル: 中立(70/30到達なし)")
+        lines.append("シグナル: 中立")
 
     return "\n".join(lines)
 
