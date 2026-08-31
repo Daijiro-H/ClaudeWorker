@@ -1,0 +1,34 @@
+name: Daily PLTR $160 Check
+
+on:
+  schedule:
+    # 23:00 UTC = 08:00 JST the next morning, after the US market close.
+    - cron: "0 23 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  # Needed so the run can open an issue when the threshold is reached.
+  issues: write
+  contents: read
+
+jobs:
+  check-price:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run PLTR price check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python scripts/check_pltr_price.py

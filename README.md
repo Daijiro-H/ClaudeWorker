@@ -57,3 +57,77 @@ RSI(14): 72.3
 
 - RSI期間やしきい値は `scripts/check_sp500_rsi.py` 冒頭の `RSI_PERIOD` / `OVERBOUGHT` / `OVERSOLD` で変更できます。
 - 実行時刻は `.github/workflows/daily-rsi-check.yml` の `cron` を変更してください(UTC指定です)。
+
+---
+
+# PLTR $160 Notifier
+
+Palantir(PLTR)の株価が **$160 に到達したか** を毎朝チェックして通知するツールです。
+PLTRは$160より上で推移しているため、「下落して$160に到達したか」を判定します。
+
+## 仕組み
+
+- `scripts/check_pltr_price.py` が yfinance で PLTR の直近の日足を取得し、終値・高値・安値を確認します。
+- 判定条件: **終値が$160以下**、または **その日の安値が$160を割り込んだ** 場合に「到達」とします(ザラ場で一時的に到達したケースも拾います)。
+- GitHub Actions のスケジュール実行 (`.github/workflows/daily-pltr-check.yml`) により、毎日 23:00 UTC(= 翌朝 **8:00 JST**、米国市場のクローズ後)に自動実行されます。
+
+## 通知経路
+
+このツールは通知経路を2つ持ちます。**設定なしで動くのはGitHub Issueの方です。**
+
+| 経路 | 送信タイミング | 必要な設定 |
+| --- | --- | --- |
+| **GitHub Issue** | $160に到達したときのみ | **不要**(`GITHUB_TOKEN` を自動使用) |
+| LINE Messaging API | 毎日(到達・未到達どちらも) | `LINE_CHANNEL_ACCESS_TOKEN` / `LINE_USER_ID` |
+
+$160に到達するとリポジトリにIssueが自動作成され、GitHubからオーナー宛にメール通知が飛びます。
+Secretsの登録は不要で、これがこのツールの主たるアラート経路です。
+
+LINEのSecretsが未設定の場合、LINE送信は警告を出してスキップされるだけで、**ワークフローは失敗しません**。
+GitHub Issueによる通知はそのまま機能します。
+
+判定結果は到達・未到達にかかわらず、毎回 GitHub Actions の **ジョブサマリー** にも出力されます
+(`Actions` タブの各実行結果ページで確認できます)。
+
+## セットアップ
+
+### 必須: 既定ブランチへのマージ
+
+GitHub Actions のスケジュール実行(`on: schedule`)は **リポジトリの既定ブランチ上のワークフローしか起動しません**。
+このブランチをマージするまで、毎朝の自動実行は始まりません。マージ前に動作を試す場合は
+`Actions` タブから `Daily PLTR $160 Check` を選び、`Run workflow` で手動実行してください。
+
+### 任意: LINE通知を有効にする
+
+毎日LINEでも受け取りたい場合のみ、`Settings > Secrets and variables > Actions` に以下を登録してください
+(S&P500 RSIツールと同じSecretsを共用します)。
+
+| Secret名 | 内容 |
+| --- | --- |
+| `LINE_CHANNEL_ACCESS_TOKEN` | チャネルアクセストークン(長期) |
+| `LINE_USER_ID` | 通知を送りたいLINEアカウントのユーザーID |
+
+## ローカル実行
+
+```bash
+pip install -r requirements.txt
+python scripts/check_pltr_price.py
+```
+
+Secretsなしでも実行でき、判定結果が標準出力に表示されます。
+
+## 通知の例
+
+```
+PLTR $160 チェック
+日付: 2026-08-27
+終値: 158.40
+高値: 162.00 / 安値: 155.00
+判定: 到達($160以下) -> アクション検討
+```
+
+## カスタマイズ
+
+- しきい値は `scripts/check_pltr_price.py` 冒頭の `THRESHOLD` で変更できます。
+- 銘柄は同じく `TICKER` で変更できます。
+- 実行時刻は `.github/workflows/daily-pltr-check.yml` の `cron` を変更してください(UTC指定です。JSTから9時間引いた値になります)。
