@@ -11,8 +11,8 @@ from __future__ import annotations
 import os
 
 import pandas as pd
-import yfinance as yf
 
+import market
 import notify
 
 TICKER = "PLTR"
@@ -33,17 +33,6 @@ def resolve_threshold() -> float:
     return float(raw)
 
 
-def fetch_recent_prices(ticker: str, period: str = "1mo") -> pd.DataFrame:
-    data = yf.download(ticker, period=period, interval="1d", progress=False, auto_adjust=False)
-    if data.empty:
-        raise RuntimeError(f"No price data returned for {ticker}")
-    # yfinance returns column MultiIndex when several tickers are requested;
-    # flatten to the single-ticker case.
-    if isinstance(data.columns, pd.MultiIndex):
-        data = data.xs(ticker, axis=1, level=1)
-    return data.dropna(subset=["Close"])
-
-
 def evaluate(close: float, low: float, threshold: float = DEFAULT_THRESHOLD) -> bool:
     """Return True when the price has come down to the threshold.
 
@@ -54,13 +43,17 @@ def evaluate(close: float, low: float, threshold: float = DEFAULT_THRESHOLD) -> 
     return close <= threshold or low <= threshold
 
 
-def build_title(close: float, reached: bool, threshold: float) -> str:
+def build_title(close: float, reached: bool, threshold: float, stale: bool = False) -> str:
     """A self-contained one-liner; it becomes the notification subject."""
+    suffix = " ※データ遅延" if stale else ""
     if reached:
-        return f"[PLTR] ${close:,.2f} — ${threshold:,.0f} 到達"
+        return f"[PLTR] ${close:,.2f} — ${threshold:,.0f} 到達{suffix}"
     diff = close - threshold
     pct = diff / threshold * 100
-    return f"[PLTR] ${close:,.2f} — ${threshold:,.0f} 未到達 (あと ${diff:,.2f} / {pct:.1f}%)"
+    return (
+        f"[PLTR] ${close:,.2f} — ${threshold:,.0f} 未到達 "
+        f"(あと ${diff:,.2f} / {pct:.1f}%){suffix}"
+    )
 
 
 def build_message(
@@ -70,6 +63,7 @@ def build_message(
     high: float,
     reached: bool,
     threshold: float = DEFAULT_THRESHOLD,
+    stale_note: str | None = None,
 ) -> str:
     date_str = date.strftime("%Y-%m-%d")
     lines = [
@@ -86,12 +80,15 @@ def build_message(
         pct = diff / threshold * 100
         lines.append(f"判定: 未到達 (あと ${diff:,.2f} / {pct:.1f}%)")
 
+    if stale_note:
+        lines.append(stale_note)
+
     return "\n".join(lines)
 
 
 def main() -> int:
     threshold = resolve_threshold()
-    data = fetch_recent_prices(TICKER)
+    data, expected, stale = market.download_daily(TICKER)
 
     latest = data.iloc[-1]
     latest_date = data.index[-1]
@@ -99,12 +96,17 @@ def main() -> int:
     low = float(latest["Low"])
     high = float(latest["High"])
 
+    stale_note = (
+        market.staleness_note(market.last_session_date(data), expected) if stale else None
+    )
     reached = evaluate(close, low, threshold)
     notify.notify(
         marker=TRACKING_MARKER,
         heading=f"PLTR ${threshold:,.0f} チェック",
-        title=build_title(close, reached, threshold),
-        message=build_message(latest_date, close, low, high, reached, threshold),
+        title=build_title(close, reached, threshold, stale),
+        message=build_message(
+            latest_date, close, low, high, reached, threshold, stale_note
+        ),
         description=DESCRIPTION,
     )
     return 0

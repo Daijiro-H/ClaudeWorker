@@ -11,8 +11,8 @@ from __future__ import annotations
 import sys
 
 import pandas as pd
-import yfinance as yf
 
+import market
 import notify
 
 TICKER = "^GSPC"
@@ -24,10 +24,7 @@ TRACKING_MARKER = "<!-- sp500-rsi-monitor -->"
 DESCRIPTION = "S&P500のRSI(14)を毎営業日チェックし、結果をこのIssueにコメントします。"
 
 
-def fetch_close_prices(ticker: str, period: str = "6mo") -> pd.Series:
-    data = yf.download(ticker, period=period, interval="1d", progress=False, auto_adjust=False)
-    if data.empty:
-        raise RuntimeError(f"No price data returned for {ticker}")
+def close_prices(data: pd.DataFrame) -> pd.Series:
     close = data["Close"]
     if isinstance(close, pd.DataFrame):
         close = close.iloc[:, 0]
@@ -49,8 +46,9 @@ def calculate_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
     return rsi
 
 
-def build_title(price: float, rsi: float) -> str:
+def build_title(price: float, rsi: float, stale: bool = False) -> str:
     """A self-contained one-liner; it becomes the notification subject."""
+    suffix = " ※データ遅延" if stale else ""
     if rsi >= OVERBOUGHT:
         verdict = "買われすぎ -> 売り検討"
     elif rsi <= OVERSOLD:
@@ -59,10 +57,12 @@ def build_title(price: float, rsi: float) -> str:
         verdict = "要注意(売られすぎゾーンに接近)"
     else:
         verdict = "中立"
-    return f"[S&P500] {price:,.2f} / RSI {rsi:.1f} — {verdict}"
+    return f"[S&P500] {price:,.2f} / RSI {rsi:.1f} — {verdict}{suffix}"
 
 
-def build_message(date: pd.Timestamp, price: float, rsi: float) -> str:
+def build_message(
+    date: pd.Timestamp, price: float, rsi: float, stale_note: str | None = None
+) -> str:
     date_str = date.strftime("%Y-%m-%d")
     lines = [
         "S&P500 RSIチェック",
@@ -85,11 +85,15 @@ def build_message(date: pd.Timestamp, price: float, rsi: float) -> str:
         f"RSI <= {CAUTION_LOW} 要注意 / RSI <= {OVERSOLD} 売られすぎ"
     )
 
+    if stale_note:
+        lines.append(stale_note)
+
     return "\n".join(lines)
 
 
 def main() -> int:
-    close = fetch_close_prices(TICKER)
+    data, expected, stale = market.download_daily(TICKER, period="6mo")
+    close = close_prices(data)
     rsi = calculate_rsi(close)
 
     latest_date = close.index[-1]
@@ -100,11 +104,15 @@ def main() -> int:
         print("Error: not enough data to calculate RSI yet.", file=sys.stderr)
         return 1
 
+    stale_note = (
+        market.staleness_note(market.last_session_date(data), expected) if stale else None
+    )
+
     notify.notify(
         marker=TRACKING_MARKER,
         heading="S&P500 RSIチェック",
-        title=build_title(latest_price, latest_rsi),
-        message=build_message(latest_date, latest_price, latest_rsi),
+        title=build_title(latest_price, latest_rsi, stale),
+        message=build_message(latest_date, latest_price, latest_rsi, stale_note),
         description=DESCRIPTION,
     )
     return 0
