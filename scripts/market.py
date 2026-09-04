@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """Daily bar retrieval with a freshness guarantee.
 
-Yahoo does not always have the day's daily bar published by the time the
-morning run fires: on 2026-09-03 the run reported the 2026-09-01 session,
-byte-for-byte identical to the previous day's notification, because the code
-took whatever the last row happened to be. Silently reporting a stale price
-as if it were current is worse than reporting nothing, so the download is
-retried until the expected session shows up, and what is still missing
-afterwards is stated in the notification instead of being hidden.
+Yahoo publishes the newest session in two places that disagree for hours
+after the close. The daily-bar array carries a row for the session with its
+OHLC still null, while the quote metadata alongside it already holds the
+settled close. Dropping the null row therefore silently falls back to the
+previous session: on 2026-09-03 and 2026-09-04 the runs reported a price a
+full session old, identical to the day before, while Yahoo's own site showed
+the current one.
+
+So the null row is completed from the quote metadata (regularMarketPrice and
+the day's high/low, stamped with regularMarketTime) rather than discarded.
+Only a session whose 16:00 ET close has passed is filled in, so an
+in-progress session is never mistaken for a settled one. If neither source
+has the expected session the download is retried, and anything still missing
+is stated in the notification instead of being hidden.
 """
 
 from __future__ import annotations
@@ -18,12 +25,17 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import requests
 import yfinance as yf
 
 EASTERN = ZoneInfo("America/New_York")
 MARKET_CLOSE_HOUR_ET = 16  # 16:00 ET regular-session close
 DEFAULT_ATTEMPTS = 3
 DEFAULT_DELAY_SECONDS = 45
+CHART_HOSTS = ("query2", "query1")
+CHART_URL = "https://{host}.finance.yahoo.com/v8/finance/chart/{ticker}?range=1d&interval=1d"
+# Yahoo rejects requests without a browser-ish agent.
+USER_AGENT = "Mozilla/5.0 (compatible; ClaudeWorker/1.0)"
 
 
 def latest_expected_session(now_utc: datetime | None = None) -> date:
@@ -54,6 +66,69 @@ def last_session_date(data: pd.DataFrame) -> date:
     return pd.Timestamp(data.index[-1]).date()
 
 
+def latest_quote(ticker: str) -> dict | None:
+    """The settled close from Yahoo's quote metadata, or None.
+
+    Returns the session date in exchange-local terms alongside the price, so
+    the caller can tell which session the quote actually belongs to.
+    """
+    for host in CHART_HOSTS:
+        try:
+            response = requests.get(
+                CHART_URL.format(host=host, ticker=ticker),
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+            )
+            response.raise_for_status()
+            meta = response.json()["chart"]["result"][0]["meta"]
+            price = meta.get("regularMarketPrice")
+            stamp = meta.get("regularMarketTime")
+            if price is None or stamp is None:
+                continue
+            tz = ZoneInfo(meta.get("exchangeTimezoneName") or "America/New_York")
+            moment = datetime.fromtimestamp(stamp, timezone.utc).astimezone(tz)
+            return {
+                "session": moment.date(),
+                "close": float(price),
+                "high": meta.get("regularMarketDayHigh"),
+                "low": meta.get("regularMarketDayLow"),
+            }
+        except Exception as exc:  # any host may fail; try the next one
+            print(f"{ticker}: quote metadata via {host} failed: {exc}", file=sys.stderr)
+    return None
+
+
+def fill_expected_session(
+    data: pd.DataFrame, ticker: str, expected: date
+) -> pd.DataFrame | None:
+    """Append the expected session from the quote metadata, if it is there."""
+    quote = latest_quote(ticker)
+    if quote is None or quote["session"] != expected:
+        return None
+
+    close = quote["close"]
+    row = {column: float("nan") for column in data.columns}
+    row["Close"] = close
+    if "High" in row:
+        row["High"] = float(quote["high"]) if quote["high"] is not None else close
+    if "Low" in row:
+        row["Low"] = float(quote["low"]) if quote["low"] is not None else close
+    if "Open" in row:
+        row["Open"] = close
+    if "Adj Close" in row:
+        row["Adj Close"] = close
+
+    stamp = pd.Timestamp(expected)
+    if data.index.tz is not None:
+        stamp = stamp.tz_localize(data.index.tz)
+    completed = pd.concat([data, pd.DataFrame([row], index=[stamp])])
+    print(
+        f"{ticker}: daily bar for {expected.isoformat()} was empty; "
+        f"completed it from the quote metadata (close={close})"
+    )
+    return completed
+
+
 def download_daily(
     ticker: str,
     period: str = "1mo",
@@ -78,6 +153,13 @@ def download_daily(
         data = data.dropna(subset=["Close"]) if not data.empty else data
         if not data.empty and last_session_date(data) >= expected:
             return data, expected, False
+
+        # The bar exists but is not populated yet; the quote metadata has it.
+        if not data.empty:
+            completed = fill_expected_session(data, ticker, expected)
+            if completed is not None:
+                return completed, expected, False
+
         if attempt < attempts:
             have = last_session_date(data).isoformat() if not data.empty else "none"
             print(
