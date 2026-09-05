@@ -64,12 +64,14 @@ def build_message(
     reached: bool,
     threshold: float = DEFAULT_THRESHOLD,
     stale_note: str | None = None,
+    previous: tuple | None = None,
 ) -> str:
     date_str = date.strftime("%Y-%m-%d")
     lines = [
         f"PLTR ${threshold:,.0f} チェック",
         f"日付: {date_str}",
         f"終値: {close:,.2f}",
+        *market.change_lines(previous, close),
         f"高値: {high:,.2f} / 安値: {low:,.2f}",
     ]
 
@@ -105,7 +107,14 @@ def main() -> int:
         heading=f"PLTR ${threshold:,.0f} チェック",
         title=build_title(close, reached, threshold, stale),
         message=build_message(
-            latest_date, close, low, high, reached, threshold, stale_note
+            latest_date,
+            close,
+            low,
+            high,
+            reached,
+            threshold,
+            stale_note,
+            market.previous_session(data),
         ),
         description=DESCRIPTION,
     )

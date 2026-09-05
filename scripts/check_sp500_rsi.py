@@ -61,13 +61,18 @@ def build_title(price: float, rsi: float, stale: bool = False) -> str:
 
 
 def build_message(
-    date: pd.Timestamp, price: float, rsi: float, stale_note: str | None = None
+    date: pd.Timestamp,
+    price: float,
+    rsi: float,
+    stale_note: str | None = None,
+    previous: tuple | None = None,
 ) -> str:
     date_str = date.strftime("%Y-%m-%d")
     lines = [
         "S&P500 RSIチェック",
         f"日付: {date_str}",
         f"終値: {price:,.2f}",
+        *market.change_lines(previous, price),
         f"RSI(14): {rsi:.1f}",
     ]
 
@@ -112,7 +117,13 @@ def main() -> int:
         marker=TRACKING_MARKER,
         heading="S&P500 RSIチェック",
         title=build_title(latest_price, latest_rsi, stale),
-        message=build_message(latest_date, latest_price, latest_rsi, stale_note),
+        message=build_message(
+            latest_date,
+            latest_price,
+            latest_rsi,
+            stale_note,
+            market.previous_session(data),
+        ),
         description=DESCRIPTION,
     )
     return 0

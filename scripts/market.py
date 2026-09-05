@@ -180,6 +180,25 @@ def download_daily(
     return data, expected, True
 
 
+def previous_session(data: pd.DataFrame) -> tuple[date, float] | None:
+    """The session before the newest one, or None when there is only one."""
+    if len(data) < 2:
+        return None
+    return pd.Timestamp(data.index[-2]).date(), float(data.iloc[-2]["Close"])
+
+
+def change_lines(previous: tuple[date, float] | None, close: float) -> list[str]:
+    """Previous close and the move from it, ready to drop into a message."""
+    if previous is None:
+        return ["前日終値: 取得できず"]
+    prev_date, prev_close = previous
+    lines = [f"前日終値: {prev_close:,.2f} ({prev_date.isoformat()})"]
+    if prev_close:
+        diff = close - prev_close
+        lines.append(f"前日比: {diff:+,.2f} ({diff / prev_close * 100:+.2f}%)")
+    return lines
+
+
 def staleness_note(last: date, expected: date) -> str:
     return (
         f"※データ遅延: {expected.isoformat()} のセッションが未反映のため、"
