@@ -62,6 +62,14 @@ def _flatten(data: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
+def close_series(data: pd.DataFrame) -> pd.Series:
+    """The Close column as a 1-D series, with gaps dropped."""
+    close = data["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    return close.dropna()
+
+
 def last_session_date(data: pd.DataFrame) -> date:
     return pd.Timestamp(data.index[-1]).date()
 
