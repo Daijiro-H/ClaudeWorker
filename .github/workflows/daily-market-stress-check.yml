@@ -1,12 +1,6 @@
 name: Daily Market Stress Check
 
 on:
-  # TEMPORARY: the workflow is not on the default branch yet, so it cannot be
-  # dispatched. This fires the first real run on the feature branch; remove it
-  # once the run has been verified.
-  push:
-    branches:
-      - claude/daily-fear-greed-composite-score-xgwn0i
   schedule:
     # 23:30 UTC = 08:30 JST the next morning, after the US market close.
     # Staggered from the other two checks so they do not all hit Yahoo at once.
