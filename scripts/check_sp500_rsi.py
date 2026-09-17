@@ -24,13 +24,6 @@ TRACKING_MARKER = "<!-- sp500-rsi-monitor -->"
 DESCRIPTION = "S&P500のRSI(14)を毎営業日チェックし、結果をこのIssueにコメントします。"
 
 
-def close_prices(data: pd.DataFrame) -> pd.Series:
-    close = data["Close"]
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-    return close.dropna()
-
-
 def calculate_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
     delta = close.diff()
     gain = delta.clip(lower=0)
@@ -98,7 +91,7 @@ def build_message(
 
 def main() -> int:
     data, expected, stale = market.download_daily(TICKER, period="6mo")
-    close = close_prices(data)
+    close = market.close_series(data)
     rsi = calculate_rsi(close)
 
     latest_date = close.index[-1]

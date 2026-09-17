@@ -1,0 +1,42 @@
+name: Daily Market Stress Check
+
+on:
+  schedule:
+    # 23:30 UTC = 08:30 JST the next morning, after the US market close.
+    # Staggered from the other two checks so they do not all hit Yahoo at once.
+    - cron: "30 23 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: "Override the 65 threshold (leave empty to use 65). Set low to force an alert and verify delivery."
+        required: false
+        default: ""
+
+permissions:
+  # Needed so the run can create and update the tracking issue.
+  issues: write
+  contents: read
+
+jobs:
+  check-stress:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run market stress check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STRESS_THRESHOLD: ${{ inputs.threshold }}
+          ISSUE_ASSIGNEE: ${{ github.repository_owner }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python scripts/check_market_stress.py
